@@ -1,9 +1,14 @@
 % Set the base path
-clc; clear
-base_path = "/path/to/ITNOW";
+if ~exist("itnow_cfg", "var")
+    clc; clearvars
+    itnow_cfg = ITNOWConfig();
+else
+    clc
+end
+base_path = itnow_cfg.base_path;
 
 % Change working directory
-cd(fullfile(base_path, "DATA"))
+cd(base_path)
 
 % Add required functions and programs to path
 addpath(fullfile(base_path, "_functions"))
@@ -13,14 +18,18 @@ addpath(fullfile(base_path, "_programs"))
 % PREFERENCES
 % -------------------------------------------------------------------
 
-vintage = "20260509";
-RemoveCovid = 0;
-H_max = 0;
-save_fcast = 1;
+if ~exist("vintage", "var") || strlength(string(vintage)) == 0
+    vintage = ITNOWLatestVintage(base_path);
+end
+RemoveCovid = itnow_cfg.remove_covid;
+H_max = itnow_cfg.h_max;
+save_fcast = itnow_cfg.save_fcast;
 
-Est_Start = datetime("1996-05-01");     % Start of estimation sample ("YYYY-mm-dd")
-Est_End = datetime("2006-04-01");       % End of estimation sample ("YYYY-mm-dd")
-Eval_End = datetime("2026-04-01");      % End of evaluation sample ("YYYY-mm-dd")
+Est_Start = itnow_cfg.est_start;        % Start of estimation sample ("YYYY-mm-dd")
+Est_End = itnow_cfg.est_end;            % End of estimation sample ("YYYY-mm-dd")
+if ~exist("Eval_End", "var") || isempty(Eval_End)
+    Eval_End = itnow_cfg.eval_end;      % End of evaluation sample ("YYYY-mm-dd")
+end
 
 
 % -------------------------------------------------------------------
@@ -30,7 +39,7 @@ Eval_End = datetime("2026-04-01");      % End of evaluation sample ("YYYY-mm-dd"
 dataset = "data" + vintage + ".csv";
 keepvars = {'vintage', 'dataset', 'RemoveCovid', 'Est_Start', 'Est_End', 'Eval_End', ...
     'spec_names', 'spec_names_all', 'y_predicted', 'H_max', 's', 'counter', ...
-    'n_monthly', 'base_path', 'keepvars', 'save_fcast'};
+    'n_monthly', 'base_path', 'keepvars', 'save_fcast', 'itnow_cfg'};
 
 spec_names_all = [];
 y_predicted = [];
@@ -155,7 +164,7 @@ disp("Forecasting pipeline ended.")
 % -------------------------------------------------------------------
 
 % Load historical GDP growth and level series
-y_actual = readtimetable("GDP_History/GDP"+vintage+".csv");
+y_actual = readtimetable(fullfile(base_path, "DATA", "GDP_History", "GDP"+vintage+".csv"));
 
 % Restore original scale for GDP growth predictions
 mean_y = mean(y_actual.Growth, 'omitmissing');

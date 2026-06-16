@@ -1,7 +1,12 @@
 % -------------------------------------------------------------------
 % 0. INITIAL SETUP
 % -------------------------------------------------------------------
-clc; clear
+if ~exist("itnow_cfg", "var")
+    clc; clearvars
+    itnow_cfg = ITNOWConfig();
+else
+    clc
+end
 
 
 % -------------------------------------------------------------------
@@ -13,14 +18,22 @@ startDate_ALL = "1990-01-01";
 startDate_INDIMPPRC = "2005-01-01";
 startDate_CONSTRPROD = "1995-01-01";
 startDate_PRODPRCIND = "2000-01-01";
-endDate = string(datetime("today","Format","uuuu-MM-dd"));
+runDate = itnow_cfg.run_date;
+runDate.Format = "uuuu-MM-dd";
+endDate = string(runDate);
 
 % --- Edition Parameters for ISTAT Data ---
-edition = "2026M3";
-preliminary_ed = "2026M4";
+edition = string(itnow_cfg.edition);
+preliminary_ed = string(itnow_cfg.preliminary_ed);
+if itnow_cfg.auto_discover_istat && ...
+        (strlength(edition) == 0 || strlength(preliminary_ed) == 0)
+    [edition, preliminary_ed, istat_metadata] = ITNOWDiscoverISTATEditions(itnow_cfg);
+else
+    istat_metadata = struct("final", edition, "preliminary", preliminary_ed);
+end
 
 % --- Web Timeout Options ---
-options = weboptions('Timeout', 60);
+options = weboptions('Timeout', itnow_cfg.web_timeout);
 
 
 % -------------------------------------------------------------------
@@ -29,7 +42,7 @@ options = weboptions('Timeout', 60);
 
 % Create and set a temporary folder as the working directory
 % Define base directory once
-base_path = "/path/to/ITNOW";
+base_path = itnow_cfg.base_path;
 temp_dir = fullfile(base_path, "DATA", "Temp");
 mkdir(temp_dir)
 cd(temp_dir)
@@ -39,10 +52,12 @@ cd(temp_dir)
 % 3. JOB SUBMISSION
 % -------------------------------------------------------------------
 
-fprintf("Downloading the dataset as of %s.\n",endDate)
-disp('Press any key to submit the job.')
-pause
-disp("...")
+fprintf("Building data vintage %s.\n", strrep(endDate, "-", ""))
+if itnow_cfg.interactive
+    disp('Press any key to submit the job.')
+    pause
+end
+fprintf("Source downloads:\n")
 
 
 % -------------------------------------------------------------------
@@ -53,12 +68,13 @@ disp("...")
 colNames = [];
 seriesDate = datetime("1995-01-01","Format","uuuu-MM-dd"):calmonths(1):datetime("today","Format","uuuu-MM-dd");
 dataTable = timetable(seriesDate');
+ITNOWDataProgress("__reset__", "", 21);
 
 % --- 4.1. Gross Domestic Product (GDP) --- 
 % Quarterly Gross Domestic Product; Chain linked volumes (2020), million
 % euro; SA; National accounts indicator (ESA 2010): Gross domestic product
 % at market prices
-disp("Downloading GDP...")
+ITNOWDataProgress("GDP", "ISTAT final edition " + edition, 21);
 isAvailable = 1;
 try   % Try to download the edition corresponding to the current month:
     dataTemp = webread('https://esploradati.istat.it/SDMXWS/rest/data/IT1,163_184_DF_DCCN_PILQ_1,1.0/Q.IT.B1GQ_B_W2_S1.L_2020.Y.'+edition+'/ALL/?detail=full&startPeriod='+startDate_ALL+'&dimensionAtObservation=TIME_PERIOD', options);
@@ -75,7 +91,7 @@ colNames = [colNames,"GDP"];
 % Quarterly Gross Domestic Product; Chain linked volumes (2020), million
 % euro; SA; National accounts indicator (ESA 2010): Gross domestic product
 % at market prices; Preliminary estimate
-disp("Downloading preliminary GDP...")
+ITNOWDataProgress("GDP_PRELIM", "ISTAT preliminary edition " + preliminary_ed, 21);
 try   % Try to download the edition corresponding to the current month:
     dataTemp = webread('https://esploradati.istat.it/SDMXWS/rest/data/IT1,163_156_DF_DCCN_SQCQ_3,1.0/Q.IT.B1GQ_B_W2_S1.L_2020.Y.'+preliminary_ed+'_1/ALL/?detail=full&startPeriod='+startDate_ALL+'&dimensionAtObservation=TIME_PERIOD', options);
 catch % If not available, change 'preliminary_ed' manually and set an older month:           
@@ -92,7 +108,7 @@ end
 
 % --- 4.2. Industrial Production (INDPROD) ---
 % Production in industry; Index 2021=100; NACE Rev. 2: B-D; SCA
-disp("Downloading INDPROD...")
+ITNOWDataProgress("INDPROD", "Eurostat", 21);
 dataTemp = webread('https://ec.europa.eu/eurostat/api/dissemination/statistics/1.0/data/sts_inpr_m?format=JSON&lang=en&freq=M&indic_bt=PRD&nace_r2=B-D&s_adj=SCA&unit=I21&geo=IT&sinceTimePeriod='+startDate_ALL, options);
 seriesDate = datetime(append(string(struct2cell(dataTemp.dimension.time.category.label)),"-01"));
 seriesTable = struct2table(dataTemp.value);
@@ -103,7 +119,7 @@ colNames = [colNames,"INDPROD"];
 
 % --- 4.3. Construction Production (CONSTRPROD) ---
 % Production in construction ; Index 2021=100; NACE Rev. 2: F; SCA
-disp("Downloading CONSTRPROD...")
+ITNOWDataProgress("CONSTRPROD", "Eurostat", 21);
 dataTemp = webread('https://ec.europa.eu/eurostat/api/dissemination/statistics/1.0/data/sts_copr_m?format=JSON&lang=en&freq=M&indic_bt=PRD&nace_r2=F&s_adj=SCA&unit=I21&geo=IT&sinceTimePeriod='+startDate_CONSTRPROD, options);
 seriesDate = datetime(append(string(struct2cell(dataTemp.dimension.time.category.label)),"-01"));
 seriesTable = struct2table(dataTemp.value);
@@ -115,7 +131,7 @@ colNames = [colNames,"CONSTRPROD"];
 
 % --- 4.4. Industrial Turnover (INDTURN) ---
 % Turnover in industry, total; Index 2021=100; NACE Rev. 2: B-D; SCA
-disp("Downloading INDTURN...")
+ITNOWDataProgress("INDTURN", "ISTAT", 21);
 dataTemp = webread('https://esploradati.istat.it/SDMXWS/rest/data/IT1,114_191_DF_DCSC_ORDFATT_9,1.0/M..IND_TURN_21.Y.T.0020/ALL/?detail=full&startPeriod=1990-01-01&dimensionAtObservation=TIME_PERIOD', options);
 Time = datetime(string(cell2mat({dataTemp.structure.dimensions.observation.values.end}')))+caldays;
 seriesTable = struct2cell(dataTemp.dataSets.series.x0_0_0_0_0_0.observations);
@@ -125,7 +141,7 @@ colNames = [colNames,"INDTURN"];
 
 % --- 4.5. Industrial Producer Prices (INDPRODPRC) ---
 % Producer prices in industry, total; Index 2021=100
-disp("Downloading INDPRODPRC...")
+ITNOWDataProgress("INDPRODPRC", "ISTAT", 21);
 dataTemp = webread('https://esploradati.istat.it/SDMXWS/rest/data/IT1,145_360_DF_DCSC_PREZZPIND_1_4,1.0/M.IT.IND_PRIC_2021.N.D.0020/ALL/?detail=full&startPeriod='+startDate_ALL'+'&dimensionAtObservation=TIME_PERIOD', options);
 Time = datetime(string(cell2mat({dataTemp.structure.dimensions.observation.values.end}')))+caldays;
 seriesTable = struct2cell(dataTemp.dataSets.series.x0_0_0_0_0_0.observations);
@@ -136,7 +152,7 @@ colNames = [colNames,"INDPRODPRC"];
 
 % --- 4.6. Industrial Import Prices (INDIMPPRC) ---
 % Import prices in industry; NSA
-disp("Downloading INDIMPPRC...")
+ITNOWDataProgress("INDIMPPRC", "Eurostat", 21);
 dataTemp = webread('https://ec.europa.eu/eurostat/api/dissemination/statistics/1.0/data/sts_inpi_m?format=JSON&lang=en&freq=M&indic_bt=PRC_IMP&cpa2_1=CPA_B-D&s_adj=NSA&unit=I21&geo=IT&sinceTimePeriod='+startDate_INDIMPPRC, options);
 seriesDate = datetime(append(string(struct2cell(dataTemp.dimension.time.category.label)),"-01"));
 seriesTable = struct2table(dataTemp.value);
@@ -148,7 +164,7 @@ colNames = [colNames,"INDIMPPRC"];
 
 % --- 4.7. Construction Costs (CONSTRCOST) ---
 % Residential and non-residential buildings; Index 2021=100; NSA
-disp("Downloading CONSTRCOST...")
+ITNOWDataProgress("CONSTRCOST", "ISTAT", 21);
 dataTemp = webread('https://esploradati.istat.it/SDMXWS/rest/data/IT1,145_361_DF_DCSC_FABBRESID_1_7,1.0/M.IT.CONS_CST2_2021.N.I/ALL/?detail=full&startPeriod='+startDate_ALL+'&dimensionAtObservation=TIME_PERIOD', options);
 seriesDate = datetime(string(cell2mat({dataTemp.structure.dimensions.observation.values.end}')))+caldays;
 seriesTable = struct2cell(dataTemp.dataSets.series.x0_0_0_0_0.observations);
@@ -159,7 +175,7 @@ colNames = [colNames,"CONSTRCOST"];
 
 % --- 4.8. Harmonized Index of Consumer Prices (HICPALL) ---
 % HICP; All-items HICP; Index 2015=100
-disp("Downloading HICPALL...")
+ITNOWDataProgress("HICPALL", "Eurostat", 21);
 dataTemp = webread('https://ec.europa.eu/eurostat/api/dissemination/sdmx/3.0/data/dataflow/ESTAT/prc_hicp_minr/1.0/*.*.*.*?c[freq]=M&c[unit]=I15&c[coicop18]=TOTAL&c[geo]=IT&c[TIME_PERIOD]=ge:1996-01&compress=false&format=json&lang=en', options);
 seriesDate = datetime(append(string(struct2cell(dataTemp.dimension.time.category.label)),"-01"));
 seriesTable = NaN(length(seriesDate),1);
@@ -172,10 +188,10 @@ colNames = [colNames,"HICPALL"];
 
 % --- 4.9. Effective Exchange Rate (EER41EUR) ---
 % Nominal EER-41/Euro; Broad EER group of trading partners
-disp("Downloading EER41EUR...")
+ITNOWDataProgress("EER41EUR", "ECB", 21);
 filePath = fullfile(cd,'/EER41EUR.csv');
 websave(filePath,'https://data-api.ecb.europa.eu/service/data/EXR/M.E03.EUR.EN00.A?format=csvdata', options);
-dataTemp = readtable(filePath,"Delimiter",',');
+dataTemp = readtable(filePath,"Delimiter",',',"VariableNamingRule","preserve");
 seriesDate = datetime(dataTemp.TIME_PERIOD,"Format","uuuu-MM");
 seriesTable = timetable(seriesDate,dataTemp.OBS_VALUE);
 dataTable = synchronize(dataTable,seriesTable);
@@ -184,13 +200,9 @@ colNames = [colNames,"EER41EUR"];
 % --- 4.10. FTSE MIB Stock Index (FTSEMIB) ---
 % From: https://stooq.com/q/d/l/?s=^fmib&d1=19900101&d2
 filePath = fullfile(cd,'FTSEMIB.csv');
-disp("Download FTSEMIB manually and save it as FTSEMIB.csv in the Temp folder:")
-disp(filePath)
-while ~isfile(filePath)
-    input("File not found yet. After saving it, press Enter to check again...","s");
-end
-disp("Loading FTSEMIB...")
-dataTemp = readtable(filePath,"Delimiter",',');
+ITNOWDataProgress("FTSEMIB", "STOOQ or cached DATA/FTSEMIB.csv", 21);
+ITNOWFetchFTSEMIB(filePath, itnow_cfg, options);
+dataTemp = readtable(filePath,"Delimiter",',',"VariableNamingRule","preserve");
 seriesDate = dateshift(datetime(dataTemp.Date)+calmonths(),"start","month");
 seriesTable = timetable(datetime(seriesDate),dataTemp.Close);
 dataTable = synchronize(dataTable,seriesTable);
@@ -198,7 +210,7 @@ colNames = [colNames,"FTSEMIB"];
 
 % --- 4.11. Tourist Nights (TOURNIGHT) ---
 % Nights spent at tourist accommodation establishments; NSA
-disp("Downloading TOURNIGHT...")
+ITNOWDataProgress("TOURNIGHT", "Eurostat", 21);
 dataTemp = webread('https://ec.europa.eu/eurostat/api/dissemination/statistics/1.0/data/tour_occ_nim?format=JSON&lang=en&freq=M&c_resid=TOTAL&unit=NR&nace_r2=I551-I553&geo=IT&sinceTimePeriod='+startDate_ALL, options);
 seriesDate = datetime(append(string(struct2cell(dataTemp.dimension.time.category.label)),"-01"));
 seriesTable = struct2table(dataTemp.value);
@@ -209,10 +221,10 @@ dataTable = synchronize(dataTable,seriesTable);
 colNames = [colNames,"TOURNIGHT"];
 
 % --- 4.12. New Passenger Car Registrations (NEWPCAREG) ---
-disp("Downloading NEWPCAREG...")
+ITNOWDataProgress("NEWPCAREG", "ECB", 21);
 filePath = fullfile(cd,'/NEWCARREG.csv');
 websave(filePath,'https://data-api.ecb.europa.eu/service/data/CAR/M.I9.Y.CREG.PC0000.4F0.N.PN?format=csvdata');
-dataTemp = readtable(filePath,"Delimiter",',');
+dataTemp = readtable(filePath,"Delimiter",',',"VariableNamingRule","preserve");
 seriesDate = datetime(dataTemp.TIME_PERIOD,"Format","uuuu-MM");
 seriesTable = timetable(seriesDate,dataTemp.OBS_VALUE);
 dataTable = synchronize(dataTable,seriesTable);
@@ -220,7 +232,7 @@ colNames = [colNames,"NEWPCAREG"];
 
 % --- 4.13. Unemployment Number (UNEMPLNUM) ---
 % Unemployment; Thousand persons; SA
-disp("Downloading UNEMPLNUM...")
+ITNOWDataProgress("UNEMPLNUM", "Eurostat", 21);
 dataTemp = webread('https://ec.europa.eu/eurostat/api/dissemination/statistics/1.0/data/ei_lmhu_m?format=JSON&lang=en&freq=M&unit=THS_PER&s_adj=SA&indic=LM-UN-T-TOT&geo=IT&sinceTimePeriod='+startDate_ALL, options);
 seriesDate = datetime(append(string(struct2cell(dataTemp.dimension.time.category.label)),"-01"));
 seriesTable = struct2table(dataTemp.value);
@@ -232,7 +244,7 @@ colNames = [colNames,"UNEMPLNUM"];
 
 % --- 4.14. Trade Balance (TRADEBAL) ---
 % EU27 international trade; SCA
-disp("Downloading TRADEBAL...")
+ITNOWDataProgress("TRADEBAL", "Eurostat", 21);
 dataTemp = webread('https://ec.europa.eu/eurostat/api/dissemination/statistics/1.0/data/ei_eteu27_2020_m?format=JSON&lang=en&freq=M&stk_flow=BAL_RT&unit=MIO-EUR-SA&partner=WORLD&indic=ET-T&geo=IT&sinceTimePeriod='+startDate_ALL, options);
 seriesDate = datetime(append(string(struct2cell(dataTemp.dimension.time.category.label)),"-01"));
 seriesTable = struct2table(dataTemp.value);
@@ -242,7 +254,7 @@ colNames = [colNames,"TRADEBAL"];
 
 % --- 4.15. Retail Trade (RETLTRADE) ---
 % Retail trade sales; Index 2021=100; SA
-disp("Downloading RETLTRADE...")
+ITNOWDataProgress("RETLTRADE", "ISTAT", 21);
 dataTemp = webread('https://esploradati.istat.it/SDMXWS/rest/data/IT1,120_337_DF_DCSC_COMMDET_1_12,1.0/M.IT.RTD_TURN_VAL_21.Y.99..TOTAL/ALL/?detail=full&startPeriod='+startDate_ALL+'&dimensionAtObservation=TIME_PERIOD', options);
 seriesDate = datetime(string(cell2mat({dataTemp.structure.dimensions.observation.values.end}')))+caldays;
 seriesTable = struct2cell(dataTemp.dataSets.series.x0_0_0_0_0_0_0.observations);
@@ -251,7 +263,7 @@ dataTable = synchronize(dataTable,seriesTable);
 colNames = [colNames,"RETLTRADE"];
 
 % --- 4.16. Economic Sentiment Indicator (ITESI) ---
-disp("Downloading ITESI...")
+ITNOWDataProgress("ITESI", "Eurostat", 21);
 dataTemp = webread('https://ec.europa.eu/eurostat/api/dissemination/statistics/1.0/data/ei_bssi_m_r2?format=JSON&lang=en&freq=M&indic=BS-ESI-I&s_adj=SA&geo=IT&sinceTimePeriod='+startDate_ALL, options);
 seriesDate = datetime(append(string(struct2cell(dataTemp.dimension.time.category.label)),"-01"));
 seriesTable = struct2table(dataTemp.value);
@@ -265,7 +277,7 @@ dataTable = synchronize(dataTable,seriesTable);
 colNames = [colNames,"ITESI"];
 
 % --- 4.17. Consumer Confidence Indicator (ITCCI) ---
-disp("Downloading ITCCI...")
+ITNOWDataProgress("ITCCI", "OECD", 21);
 dataTemp = webread('https://sdmx.oecd.org/public/rest/data/OECD.SDD.STES,DSD_STES@DF_CLI,4.1/ITA.M.CCICP...AA.IX..H?startPeriod='+startDate_ALL+'&dimensionAtObservation=AllDimensions', options);
 seriesDate = datetime(append(string(cell2mat({dataTemp.structure.dimensions.observation(10).values.id}')),'-01'));
 seriesTable = array2table(cell2mat(struct2cell(dataTemp.dataSets.observations)')');
@@ -274,7 +286,7 @@ dataTable = synchronize(dataTable,seriesTable);
 colNames = [colNames,"ITCCI"];
 
 % --- 4.18. Business Confidence Indicator (ITCBC) ---
-disp("Downloading ITCBC...")
+ITNOWDataProgress("ITCBC", "OECD", 21);
 dataTemp = webread('https://sdmx.oecd.org/public/rest/data/OECD.SDD.STES,DSD_STES@DF_CLI,4.1/ITA.M.BCICP...AA.IX..H?startPeriod='+startDate_ALL+'&dimensionAtObservation=AllDimensions', options);
 seriesDate = datetime(append(string(cell2mat({dataTemp.structure.dimensions.observation(10).values.id}')),'-01'));
 seriesTable = array2table(cell2mat(struct2cell(dataTemp.dataSets.observations)')');
@@ -283,8 +295,8 @@ dataTable = synchronize(dataTable,seriesTable);
 colNames = [colNames,"ITCBC"];
 
 % --- 4.19. Ita-coin Indicator ---
-disp("Downloading ITACOIN...")
-dataTemp = readtable('https://www.bancaditalia.it/statistiche/tematiche/indicatori/indicatore-ciclico-coincidente/Itacoin_it.xlsx');
+ITNOWDataProgress("ITACOIN", "Bank of Italy", 21);
+dataTemp = ITNOWReadTableQuiet('https://www.bancaditalia.it/statistiche/tematiche/indicatori/indicatore-ciclico-coincidente/Itacoin_it.xlsx');
 seriesDate = dateshift(datetime(dataTemp.Date),'start','month');
 seriesTable = array2table(dataTemp.Ita_coin);
 seriesTable = timetable(seriesDate,seriesTable{:,1});
@@ -292,21 +304,21 @@ dataTable = synchronize(dataTable,seriesTable);
 colNames = [colNames,"ITACOIN"];
 
 % --- 4.20. Euro-coin Indicator ---
-disp("Downloading EUROCOIN...")
-dataTemp = readtable('https://www.bancaditalia.it/statistiche/tematiche/indicatori/indicatore-euro-coin/Ecoin_realtime.xlsx');
+ITNOWDataProgress("EUROCOIN", "Bank of Italy", 21);
+dataTemp = ITNOWReadTableQuiet('https://www.bancaditalia.it/statistiche/tematiche/indicatori/indicatore-euro-coin/Ecoin_realtime.xlsx');
 seriesDate = dateshift(datetime(dataTemp.Date),'start','month');
 seriesTable = array2table(dataTemp.x_coinRealtime_NewEstimate);
 seriesTable = timetable(seriesDate,seriesTable{:,1});
 dataTable = synchronize(dataTable,seriesTable);
 colNames = [colNames,"EUROCOIN"];
 
-disp("All series were successfully downloaded.")
+fprintf("Source downloads completed.\n")
 
 
 % -------------------------------------------------------------------
 % 5. DATA ASSEMBLY & CLEANING
 % -------------------------------------------------------------------
-disp("Arranging the dataset...")
+fprintf("Assembling dataset.\n")
 
 dataTable.Properties.VariableNames = colNames;
 startIndex = find(~isnan(dataTable.GDP),1,"first");
@@ -317,7 +329,7 @@ dataTable = movevars(dataTable,"GDP","After",colNames(end));
 % -------------------------------------------------------------------
 % 6. DATA VALIDATION
 % -------------------------------------------------------------------
-disp("Looking for dismissed indicators...")
+fprintf("Validating publication delays and missingness.\n")
 
 CheckPubDelay = sum(isnan(dataTable{end-4:end,:})) > 4;
 if any(CheckPubDelay)
@@ -397,7 +409,22 @@ cd(newDir)
 % Save the ready datasets
 writetimetable(GDPSeries,append("GDP_History/GDP",strrep(endDate,"-",""),".csv"))
 writetimetable(dataTable,append("data",strrep(endDate,"-",""),".csv"))
-disp("And it's done!")
+
+metadataDir = fullfile(base_path, "DATA", "VINTAGE_METADATA");
+mkdir(metadataDir)
+metadata = struct();
+metadata.vintage = strrep(endDate, "-", "");
+metadata.run_date = endDate;
+metadata.eval_end_default = string(itnow_cfg.eval_end);
+metadata.edition = edition;
+metadata.preliminary_ed = preliminary_ed;
+metadata.istat = istat_metadata;
+metadata.ftsemib_mode = string(itnow_cfg.ftsemib_mode);
+metadata.created_at = string(datetime("now", "Format", "uuuu-MM-dd HH:mm:ss"));
+fid = fopen(fullfile(metadataDir, "vintage" + metadata.vintage + ".json"), "w");
+fwrite(fid, jsonencode(metadata), "char");
+fclose(fid);
+fprintf("Data vintage %s saved.\n", metadata.vintage)
 
 % Remove the temporary data folder
 rmdir(temp_dir,'s');
