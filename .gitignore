@@ -1,0 +1,42 @@
+# macOS
+
+.DS_Store
+
+# Project data and generated material
+
+DATA/
+HISTORY/
+__DEPRECATED/
+
+# MATLAB temporary/autosave files
+
+*.asv
+*.m~
+*.mlx~
+*.slxc
+*.mex*
+*.log
+
+# MATLAB generated folders
+
+slprj/
+codegen/
+
+# Python/Jupyter cache files
+
+**pycache**/
+*.pyc
+.ipynb_checkpoints/
+
+# Environment/secrets
+
+.env
+*.env
+
+# Large or generated outputs
+
+outputs/
+output/
+results/
+figures/
+tables/
