@@ -59,6 +59,14 @@ Added the first automation layer for unattended ITNOW updates.
   now refreshed only for March, June, September, and December evaluation ends.
 - Made the website metadata manifest strict JSON by converting non-finite
   values to `null`.
+- Added automatic public-page updates for the ISTAT preliminary GDP release
+  link, using the latest published reference quarter implied by `Eval_End`.
+- Clarified the public-page prediction interval text: the interval is based on
+  historical skilled-combination nowcast errors, not on the current
+  cross-model forecast distribution, and is not mechanically centered around
+  the top-five skilled combination.
+- Added a page-update guard that fails non-quarter-end deployments if the
+  reference-quarter website section would be changed.
 
 ## 10-05-2026
 

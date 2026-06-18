@@ -7,6 +7,7 @@
 DATA/
 HISTORY/
 __DEPRECATED/
+scripts/local_check_current_nowcast.ipynb
 
 # MATLAB temporary/autosave files
 

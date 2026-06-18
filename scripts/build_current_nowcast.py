@@ -304,9 +304,43 @@ def write_payload_json(path: Path, payload: dict) -> None:
     path.write_text(json.dumps(json_ready(payload), indent=2, allow_nan=False), encoding="utf-8")
 
 
+def reference_quarter_for_release(last_date: pd.Timestamp) -> tuple[int, int]:
+    quarter = int(last_date.quarter)
+    year = int(last_date.year)
+    if last_date.month in (3, 6, 9, 12):
+        return quarter, year
+    quarter -= 1
+    if quarter == 0:
+        return 4, year - 1
+    return quarter, year
+
+
+def istat_release_line(quarter: int, year: int) -> str:
+    url = f"https://www.istat.it/en/press-release/preliminary-estimate-of-gdp-q{quarter}-{year}/"
+    return (
+        f"The latest ISTAT release (Q{quarter}:{year}, preliminary estimate of GDP) "
+        f"can be found [here]({url})."
+    )
+
+
+def replace_first_match(text: str, pattern: str, replacement: str, label: str, flags: int = 0) -> str:
+    updated, count = re.subn(pattern, replacement, text, count=1, flags=flags)
+    if count != 1:
+        raise RuntimeError(f"Could not update website {label}; expected exactly one match.")
+    return updated
+
+
+def reference_section_snapshot(text: str) -> str:
+    match = re.search(r"(^## [^\n]*Reference Quarter Nowcast[^\n]*\n.*?)(?=^## |\Z)", text, flags=re.S | re.M)
+    if match is None:
+        raise RuntimeError("Could not find the website reference-quarter section.")
+    return match.group(1)
+
+
 def build_payload(vintage: str, eval_end: str, y_growth: pd.DataFrame, nowtab1: pd.DataFrame, nowtab2: pd.DataFrame) -> dict:
     last_date = y_growth.index[-1]
     is_quarter_end = last_date.month in (3, 6, 9, 12)
+    release_quarter, release_year = reference_quarter_for_release(last_date)
     quarter_label = f"Q{last_date.quarter}" if is_quarter_end else "N/A"
     preliminary = y_growth["Growth"].iloc[-1]
     payload = {
@@ -314,7 +348,13 @@ def build_payload(vintage: str, eval_end: str, y_growth: pd.DataFrame, nowtab1: 
         "eval_end": eval_end,
         "is_quarter_end": is_quarter_end,
         "monthly_update": last_date.strftime("%b, %Y"),
-        "reference_quarter_update": f"Q{last_date.quarter}-{last_date.year}",
+        "reference_quarter_update": f"Q{release_quarter}-{release_year}",
+        "nowcast_quarter": f"Q{last_date.quarter}-{last_date.year}",
+        "istat_release": {
+            "quarter": release_quarter,
+            "year": release_year,
+            "line": istat_release_line(release_quarter, release_year),
+        },
         "history_row": {
             "Time": pd.to_datetime(vintage, format="%Y%m%d").date().isoformat(),
             "Quarter": quarter_label,
@@ -339,16 +379,53 @@ def build_payload(vintage: str, eval_end: str, y_growth: pd.DataFrame, nowtab1: 
 
 def update_index_md(path: Path, payload: dict, nowtab1: pd.DataFrame, nowtab2: pd.DataFrame) -> None:
     text = path.read_text(encoding="utf-8")
-    text = re.sub(
+    original_reference_section = reference_section_snapshot(text)
+
+    text = replace_first_match(
+        text,
         r"(## .*Quarterly Growth Nowcast Density \(Last Update: ).*?(\))",
         rf"\g<1>{payload['monthly_update']}\2",
+        "monthly growth heading",
+    )
+
+    figure1_caption = (
+        '*Figure 1: Kernel density estimate of the latest Italian quarterly nominal GDP growth nowcasts '
+        'in 2020 chain-linked values. Full and Skilled correspond to time-varying combination schemes '
+        'using, respectively, the full set of methods and the selected "skilled" set of top five '
+        'nowcasts, while Median corresponds to the median nowcast. This density describes the '
+        'cross-sectional distribution of current model nowcasts and is not the source of the empirical '
+        'prediction interval reported below.*'
+    )
+    text = replace_first_match(
         text,
+        r"\*Figure 1: Kernel density estimate of .*?\*",
+        figure1_caption,
+        "Figure 1 caption",
+        flags=re.S,
+    )
+
+    figure2_caption = (
+        "*Figure 2: History of the Italian quarterly nominal GDP growth nowcasts using the skilled "
+        "combination of top five methods and realizations in 2020 chain-linked values. Prior to the "
+        "latest nowcast, pseudo-real-time nowcasts are displayed. The shaded band is a 90% empirical "
+        "prediction interval: at each date, the 5th and 95th percentiles of the historical "
+        "skilled-combination nowcast errors are added to that date's skilled-combination nowcast. "
+        "The interval is therefore not the cross-model distribution of current forecasts and is not "
+        "mechanically centered around the top-five skilled nowcast combination.*"
+    )
+    text = replace_first_match(
+        text,
+        r"\*Figure 2: History of the Italian quarterly nominal GDP growth nowcasts .*?\*",
+        figure2_caption,
+        "Figure 2 caption",
+        flags=re.S,
     )
     if payload["is_quarter_end"]:
-        text = re.sub(
-            r"(## .*Reference Quarter Nowcast \(Last Update: ).*?(\))",
-            rf"\g<1>{payload['reference_quarter_update']}\2",
+        text = replace_first_match(
             text,
+            r"(## .*Reference Quarter Nowcast \(Last Update: ).*?(\))",
+            rf"\g<1>{payload['nowcast_quarter']}\2",
+            "reference-quarter heading",
         )
 
     growth_row = nowtab1.iloc[0]
@@ -381,6 +458,29 @@ def update_index_md(path: Path, payload: dict, nowtab1: pd.DataFrame, nowtab2: p
             level_table,
             text,
         )
+    else:
+        updated_reference_section = reference_section_snapshot(text)
+        if updated_reference_section != original_reference_section:
+            raise RuntimeError("Non-quarter-end website staging changed the reference-quarter section.")
+
+    table1_caption = (
+        "*Table 1: Latest skilled-combination nowcast and 90% empirical prediction interval bounds. "
+        "The bounds are obtained from historical skilled-combination nowcast errors, not from the "
+        "cross-sectional distribution of current model nowcasts (see Figure 2).*"
+    )
+    text = replace_first_match(
+        text,
+        r"\*Table 1: .*?\*",
+        table1_caption,
+        "Table 1 caption",
+        flags=re.S,
+    )
+    text = replace_first_match(
+        text,
+        r"The latest ISTAT release \(Q\d:\d{4}, preliminary estimate of GDP\) can be found \[here\]\([^)]+\)\.",
+        payload["istat_release"]["line"],
+        "ISTAT release link",
+    )
     path.write_text(text, encoding="utf-8")
 
 

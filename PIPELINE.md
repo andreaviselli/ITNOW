@@ -214,6 +214,18 @@ updates only the monthly growth density, the monthly growth table,
 history workbook. The reference-quarter section and `GDP_Level_Ncast.json` are
 updated only when `Eval_End` is March, June, September, or December.
 
+The reporting script also updates the public page text around the monthly
+growth figures. The shaded band in the historical growth chart is a 90%
+empirical prediction interval: the 5th and 95th percentiles of the historical
+skilled-combination nowcast errors are added to each date's skilled-combination
+nowcast. It is not the cross-sectional distribution of current model forecasts,
+and it is not mechanically centered around the top-five skilled combination.
+
+The ISTAT release link on the public page is generated automatically from the
+latest published reference quarter implied by `Eval_End`. For non-quarter-end
+months, it points to the previous completed quarter; for March, June,
+September, and December, it points to the current nowcast quarter.
+
 The website repository is a deployment target. It should not be committed from
 this project automation unless explicitly requested.
 
