@@ -2,6 +2,27 @@
 
 Started in June 2025.
 
+## 27-06-2026
+
+Removed the operational selected-nowcast path from historical forecasts and
+website reporting.
+
+- Stopped saving top-five and top-ten BG forecast combinations from
+  `GetHistFcast.m`; the website-facing nowcast is now `BG_4`, the full
+  model-space Bates-Granger combination.
+- Removed smoothed-combination evaluation outputs, the top-K combination weight
+  analysis section, and the smoothed-combination plot from `GetHistFcast.m`.
+- Updated `scripts/build_current_nowcast.py` so growth/level figures, current
+  tables, payload JSON, and the website history workbook row are all based on
+  `BG_4`.
+- Updated the density chart to mark only the full BG combination and the
+  median, with the KDE computed from the full set of individual model
+  nowcasts.
+- Updated website caption text and pipeline documentation to describe the full
+  model-space BG combination instead of selected combinations.
+- Extended website staging so the reference-quarter level caption and table
+  note also describe the full model-space BG combination.
+
 ## 16-06-2026
 
 Added the first automation layer for unattended ITNOW updates.
@@ -62,9 +83,9 @@ Added the first automation layer for unattended ITNOW updates.
 - Added automatic public-page updates for the ISTAT preliminary GDP release
   link, using the latest published reference quarter implied by `Eval_End`.
 - Clarified the public-page prediction interval text: the interval is based on
-  historical skilled-combination nowcast errors, not on the current
-  cross-model forecast distribution, and is not mechanically centered around
-  the top-five skilled combination.
+  historical full-combination nowcast errors, not on the current cross-model
+  forecast distribution, and is not mechanically centered around the
+  cross-sectional median nowcast.
 - Added a page-update guard that fails non-quarter-end deployments if the
   reference-quarter website section would be changed.
 

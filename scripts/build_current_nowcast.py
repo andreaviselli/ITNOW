@@ -17,6 +17,11 @@ import plotly.graph_objects as go
 from scipy.stats import gaussian_kde
 
 
+NOWCAST_COLUMN = "BG_4"
+SUMMARY_NOWCAST_COLUMNS = {"Mean", "Median", "Naive"}
+COMBINATION_COLUMN_PATTERN = re.compile(r"^BG(?:_|$)")
+
+
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser()
     parser.add_argument("--base-path", required=True)
@@ -45,27 +50,37 @@ def prepare_nowcasts(
     y_predicted: pd.DataFrame, y_actual: pd.DataFrame, est_end: str, eval_end: str
 ) -> tuple[pd.DataFrame, pd.DataFrame, pd.Timestamp, int, float]:
     y_actual = y_actual.loc[est_end:eval_end].copy()
+    if NOWCAST_COLUMN not in y_predicted.columns:
+        raise RuntimeError(f"Expected full BG nowcast column missing: {NOWCAST_COLUMN}")
 
     y_level = y_actual[["Level"]].copy()
-    first_fcast_idx = y_predicted["BG_K1_4"].first_valid_index()
+    first_fcast_idx = y_predicted[NOWCAST_COLUMN].first_valid_index()
     first_fcast_loc = y_predicted.index.get_loc(first_fcast_idx)
 
-    level_nowcast = y_actual["Level"].shift(3) * (1 + y_predicted["BG_K1_4"])
-    y_level["BG_K1_4"] = np.nan
-    y_level.iloc[first_fcast_loc:, y_level.columns.get_loc("BG_K1_4")] = (
+    level_nowcast = y_actual["Level"].shift(3) * (1 + y_predicted[NOWCAST_COLUMN])
+    y_level[NOWCAST_COLUMN] = np.nan
+    y_level.iloc[first_fcast_loc:, y_level.columns.get_loc(NOWCAST_COLUMN)] = (
         level_nowcast.iloc[first_fcast_loc:]
     )
     y_level["Level"] = y_level["Level"] / 1000
-    y_level["BG_K1_4"] = y_level["BG_K1_4"] / 1000
+    y_level[NOWCAST_COLUMN] = y_level[NOWCAST_COLUMN] / 1000
 
     y_growth = y_actual.copy()
     alpha = 0.05
-    y_growth["BG_K1_4"] = y_predicted["BG_K1_4"]
-    errors = y_growth["Growth"] - y_growth["BG_K1_4"]
-    y_growth["BG_K1_4_Low"] = y_growth["BG_K1_4"] + errors.quantile(alpha)
-    y_growth["BG_K1_4_Upp"] = y_growth["BG_K1_4"] + errors.quantile(1 - alpha)
+    y_growth[NOWCAST_COLUMN] = y_predicted[NOWCAST_COLUMN]
+    errors = y_growth["Growth"] - y_growth[NOWCAST_COLUMN]
+    y_growth[f"{NOWCAST_COLUMN}_Low"] = y_growth[NOWCAST_COLUMN] + errors.quantile(alpha)
+    y_growth[f"{NOWCAST_COLUMN}_Upp"] = y_growth[NOWCAST_COLUMN] + errors.quantile(1 - alpha)
 
     return y_growth, y_level, first_fcast_idx, first_fcast_loc, alpha
+
+
+def model_nowcast_columns(y_predicted: pd.DataFrame) -> list[str]:
+    return [
+        column
+        for column in y_predicted.columns
+        if column not in SUMMARY_NOWCAST_COLUMNS and not COMBINATION_COLUMN_PATTERN.match(column)
+    ]
 
 
 def write_figures(
@@ -82,12 +97,12 @@ def write_figures(
     height0 = 500
 
     last_date = y_growth.index[-1]
-    last_nowcast_val = y_growth["BG_K1_4"].iloc[-1]
+    last_nowcast_val = y_growth[NOWCAST_COLUMN].iloc[-1]
 
     valid_growth = y_growth.loc[first_fcast_idx:].copy()
     in_between_x = np.concatenate([valid_growth.index.values, valid_growth.index.values[::-1]])
     in_between_y = pd.concat(
-        [valid_growth["BG_K1_4_Low"], valid_growth["BG_K1_4_Upp"][::-1]]
+        [valid_growth[f"{NOWCAST_COLUMN}_Low"], valid_growth[f"{NOWCAST_COLUMN}_Upp"][::-1]]
     ).values
 
     fig1 = go.Figure()
@@ -116,7 +131,7 @@ def write_figures(
     fig1.add_trace(
         go.Scatter(
             x=y_growth.index,
-            y=y_growth["BG_K1_4"],
+            y=y_growth[NOWCAST_COLUMN],
             mode="lines",
             name="Historical Nowcast",
             line={"color": "#D95319", "width": 3},
@@ -158,14 +173,14 @@ def write_figures(
     fig2.add_trace(
         go.Scatter(
             x=y_level_quarterly.index,
-            y=y_level_quarterly["BG_K1_4"],
+            y=y_level_quarterly[NOWCAST_COLUMN],
             mode="lines",
             name="Historical Nowcast",
             line={"color": "#D95319", "width": 4},
             hovertemplate="%{x|%b %Y}<br>Nowcast: %{y:.3f} Bln \u20ac<extra></extra>",
         )
     )
-    last_level_nowcast = y_level["BG_K1_4"].iloc[-1]
+    last_level_nowcast = y_level[NOWCAST_COLUMN].iloc[-1]
     fig2.add_hline(y=last_level_nowcast, line_dash="dot", line_color="#D95319")
     fig2.add_annotation(
         x=y_level.index[-25],
@@ -194,7 +209,10 @@ def write_figures(
     )
     fig2.write_json(out_dir / "GDP_Level_Ncast.json")
 
-    last_nowcasts = y_predicted.iloc[-1].dropna()
+    nowcast_columns = model_nowcast_columns(y_predicted)
+    last_nowcasts = y_predicted.loc[y_predicted.index[-1], nowcast_columns].dropna()
+    if last_nowcasts.empty:
+        raise RuntimeError("No model nowcasts are available for the latest density plot.")
     nowcast_values = last_nowcasts.values
     kde = gaussian_kde(nowcast_values)
     x_range = np.linspace(nowcast_values.min() - 0.005, nowcast_values.max() + 0.005, 500)
@@ -214,10 +232,9 @@ def write_figures(
     marker_style = {"size": 15, "line": {"width": 2, "color": "DarkSlateGrey"}}
     for key, label, color in [
         ("BG_4", "Full", "Teal"),
-        ("BG_K1_4", "Skilled", "Teal"),
         ("Median", "Median", "ForestGreen"),
     ]:
-        value = last_nowcasts.get(key)
+        value = y_predicted[key].iloc[-1] if key in y_predicted.columns else None
         if value is not None and not pd.isna(value):
             fig3.add_trace(
                 go.Scatter(
@@ -244,25 +261,25 @@ def build_tables(y_growth: pd.DataFrame, y_level: pd.DataFrame, alpha: float) ->
     last_date = y_growth.index[-1]
     nowtab1 = pd.DataFrame(
         {
-            "QoQ % Change (back)": [100 * y_growth["BG_K1_4"].iloc[-2]],
-            "QoQ % Change (now)": [100 * y_growth["BG_K1_4"].iloc[-1]],
-            f"{int(alpha * 100)}% Pr. (now)": [100 * y_growth["BG_K1_4_Low"].iloc[-1]],
-            f"{int((1 - alpha) * 100)}% Pr. (now)": [100 * y_growth["BG_K1_4_Upp"].iloc[-1]],
+            "QoQ % Change (back)": [100 * y_growth[NOWCAST_COLUMN].iloc[-2]],
+            "QoQ % Change (now)": [100 * y_growth[NOWCAST_COLUMN].iloc[-1]],
+            f"{int(alpha * 100)}% Pr. (now)": [100 * y_growth[f"{NOWCAST_COLUMN}_Low"].iloc[-1]],
+            f"{int((1 - alpha) * 100)}% Pr. (now)": [100 * y_growth[f"{NOWCAST_COLUMN}_Upp"].iloc[-1]],
         },
         index=[last_date.strftime("%Y-%m-%d")],
     ).round(2)
 
-    yoy_growth = 100 * (y_level["BG_K1_4"].iloc[-1] - y_level["Level"].iloc[-13]) / y_level["Level"].iloc[-13]
+    yoy_growth = 100 * (y_level[NOWCAST_COLUMN].iloc[-1] - y_level["Level"].iloc[-13]) / y_level["Level"].iloc[-13]
     prev_year = y_level.index.year == (last_date.year - 1)
     last_level_prev_year = y_level.loc[prev_year, "Level"].iloc[-1]
-    carry_growth = 100 * (y_level["BG_K1_4"].iloc[-1] - last_level_prev_year) / last_level_prev_year
+    carry_growth = 100 * (y_level[NOWCAST_COLUMN].iloc[-1] - last_level_prev_year) / last_level_prev_year
 
     nowtab2 = pd.DataFrame(
         {
-            "QoQ % Change": [100 * y_growth["BG_K1_4"].iloc[-1]],
+            "QoQ % Change": [100 * y_growth[NOWCAST_COLUMN].iloc[-1]],
             "YoY % Change": [yoy_growth],
             "Carry Over": [carry_growth],
-            "Level (Bln \u20ac)": [y_level["BG_K1_4"].iloc[-1]],
+            "Level (Bln \u20ac)": [y_level[NOWCAST_COLUMN].iloc[-1]],
         },
         index=[f"Q{last_date.quarter}-{last_date.year}"],
     ).round(2)
@@ -379,6 +396,33 @@ def build_payload(vintage: str, eval_end: str, y_growth: pd.DataFrame, nowtab1: 
 
 def update_index_md(path: Path, payload: dict, nowtab1: pd.DataFrame, nowtab2: pd.DataFrame) -> None:
     text = path.read_text(encoding="utf-8")
+
+    figure3_caption = (
+        "*Figure 3: History of the Italian quarterly nominal GDP level nowcasts using the full model-space "
+        "Bates-Granger combination and realizations in 2020 chain-linked values (billions of euros). "
+        "Prior to the latest nowcast, pseudo-real-time nowcasts are displayed.*"
+    )
+    text = replace_first_match(
+        text,
+        r"\*Figure 3: History of the Italian quarterly [Nn]ominal GDP level nowcasts .*?\*",
+        figure3_caption,
+        "Figure 3 caption",
+        flags=re.S,
+    )
+    table2_caption = (
+        "*Table 2: Nowcasted QoQ and YoY growth rates, carry-over annual effect, and GDP level "
+        "from the full model-space Bates-Granger combination (see Figure 3). Note that the "
+        "carry-over annual effect is unavailable for the first quarter of the year, and coincides "
+        "with the YoY % Change in the last quarter.*"
+    )
+    text = replace_first_match(
+        text,
+        r"\*Table 2: Nowcasted QoQ and YoY growth rates, carry-over annual effect, and GDP level .*?\*",
+        table2_caption,
+        "Table 2 caption",
+        flags=re.S,
+    )
+
     original_reference_section = reference_section_snapshot(text)
 
     text = replace_first_match(
@@ -390,28 +434,27 @@ def update_index_md(path: Path, payload: dict, nowtab1: pd.DataFrame, nowtab2: p
 
     figure1_caption = (
         '*Figure 1: Kernel density estimate of the latest Italian quarterly nominal GDP growth nowcasts '
-        'in 2020 chain-linked values. Full and Skilled correspond to time-varying combination schemes '
-        'using, respectively, the full set of methods and the selected "skilled" set of top five '
-        'nowcasts, while Median corresponds to the median nowcast. This density describes the '
+        'in 2020 chain-linked values. Full corresponds to the time-varying Bates-Granger combination '
+        'using the full model space, while Median corresponds to the median nowcast. This density describes the '
         'cross-sectional distribution of current model nowcasts and is not the source of the empirical '
         'prediction interval reported below.*'
     )
     text = replace_first_match(
         text,
-        r"\*Figure 1: Kernel density estimate of .*?\*",
+        r"\*Figure 1: Kernel density estimate .*?\*",
         figure1_caption,
         "Figure 1 caption",
         flags=re.S,
     )
 
     figure2_caption = (
-        "*Figure 2: History of the Italian quarterly nominal GDP growth nowcasts using the skilled "
-        "combination of top five methods and realizations in 2020 chain-linked values. Prior to the "
+        "*Figure 2: History of the Italian quarterly nominal GDP growth nowcasts using the full model-space "
+        "Bates-Granger combination and realizations in 2020 chain-linked values. Prior to the "
         "latest nowcast, pseudo-real-time nowcasts are displayed. The shaded band is a 90% empirical "
         "prediction interval: at each date, the 5th and 95th percentiles of the historical "
-        "skilled-combination nowcast errors are added to that date's skilled-combination nowcast. "
+        "full-combination nowcast errors are added to that date's full-combination nowcast. "
         "The interval is therefore not the cross-model distribution of current forecasts and is not "
-        "mechanically centered around the top-five skilled nowcast combination.*"
+        "mechanically centered around the cross-sectional median nowcast.*"
     )
     text = replace_first_match(
         text,
@@ -464,8 +507,8 @@ def update_index_md(path: Path, payload: dict, nowtab1: pd.DataFrame, nowtab2: p
             raise RuntimeError("Non-quarter-end website staging changed the reference-quarter section.")
 
     table1_caption = (
-        "*Table 1: Latest skilled-combination nowcast and 90% empirical prediction interval bounds. "
-        "The bounds are obtained from historical skilled-combination nowcast errors, not from the "
+        "*Table 1: Latest full model-space Bates-Granger nowcast and 90% empirical prediction interval bounds. "
+        "The bounds are obtained from historical full-combination nowcast errors, not from the "
         "cross-sectional distribution of current model nowcasts (see Figure 2).*"
     )
     text = replace_first_match(

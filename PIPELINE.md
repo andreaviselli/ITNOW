@@ -217,9 +217,16 @@ updated only when `Eval_End` is March, June, September, or December.
 The reporting script also updates the public page text around the monthly
 growth figures. The shaded band in the historical growth chart is a 90%
 empirical prediction interval: the 5th and 95th percentiles of the historical
-skilled-combination nowcast errors are added to each date's skilled-combination
-nowcast. It is not the cross-sectional distribution of current model forecasts,
-and it is not mechanically centered around the top-five skilled combination.
+full model-space Bates-Granger nowcast errors are added to each date's full
+model-space Bates-Granger nowcast. It is not the cross-sectional distribution
+of current model forecasts, and it is not mechanically centered around the
+cross-sectional median nowcast.
+
+The website growth and level tables, JSON payload, history workbook row, and
+historical nowcast chart all use `BG_4`, the full model-space Bates-Granger
+combination saved by `GetHistFcast.m`. The density chart is computed from the
+full set of individual model nowcasts and marks only the full BG combination
+and the cross-sectional median.
 
 The ISTAT release link on the public page is generated automatically from the
 latest published reference quarter implied by `Eval_End`. For non-quarter-end
