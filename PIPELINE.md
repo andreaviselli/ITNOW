@@ -5,7 +5,8 @@
 `RunITNOWUpdate.m` is the orchestrator for unattended operation. It loads the
 shared configuration, discovers source vintages, runs the data construction
 script, runs the historical forecast script, and invokes the Python reporting
-script.
+script. Required `DATA/` and `HISTORY/` output directories are created
+automatically, including on a fresh clone.
 
 Run the full pipeline from the terminal:
 
@@ -157,6 +158,14 @@ DATA/FTSEMIB.csv
 
 The file must contain the expected columns and must not end before `Eval_End`,
 unless `allow_stale_ftsemib` is explicitly enabled.
+
+## OECD Confidence Indicators
+
+The consumer and business confidence downloads first query the OECD SDMX API.
+If that endpoint is unavailable or blocked, the pipeline falls back to the
+FRED-hosted copies of the same OECD series (`CSCICP03ITM665S` and
+`BSCICP03ITM665S`). The fallback preserves the OECD measure, units, seasonal
+adjustment, and published observation coverage.
 
 ## Forecasting
 

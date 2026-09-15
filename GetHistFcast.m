@@ -14,6 +14,16 @@ cd(base_path)
 addpath(fullfile(base_path, "_functions"))
 addpath(fullfile(base_path, "_programs"))
 
+% Create shared output folders required by the model scripts.
+history_dirs = [fullfile(base_path, "HISTORY", "PREDICTION"), ...
+    fullfile(base_path, "HISTORY", "HIST_TABLES"), ...
+    fullfile(base_path, "HISTORY", "SMOOTHEDFACTOR")];
+for history_dir_index = 1:numel(history_dirs)
+    if ~isfolder(history_dirs(history_dir_index))
+        mkdir(history_dirs(history_dir_index))
+    end
+end
+
 % -------------------------------------------------------------------
 % PREFERENCES
 % -------------------------------------------------------------------

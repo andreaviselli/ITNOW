@@ -40,11 +40,17 @@ options = weboptions('Timeout', itnow_cfg.web_timeout);
 % 2. ENVIRONMENT SETUP
 % -------------------------------------------------------------------
 
-% Create and set a temporary folder as the working directory
-% Define base directory once
+% Create and set the data output folders and temporary working directory
 base_path = itnow_cfg.base_path;
+data_dir = fullfile(base_path, "DATA");
 temp_dir = fullfile(base_path, "DATA", "Temp");
-mkdir(temp_dir)
+data_dirs = [temp_dir, fullfile(data_dir, "GDP_History"), ...
+    fullfile(data_dir, "VINTAGE_METADATA")];
+for data_dir_index = 1:numel(data_dirs)
+    if ~isfolder(data_dirs(data_dir_index))
+        mkdir(data_dirs(data_dir_index))
+    end
+end
 cd(temp_dir)
 
 
@@ -277,20 +283,16 @@ dataTable = synchronize(dataTable,seriesTable);
 colNames = [colNames,"ITESI"];
 
 % --- 4.17. Consumer Confidence Indicator (ITCCI) ---
-ITNOWDataProgress("ITCCI", "OECD", 21);
-dataTemp = webread('https://sdmx.oecd.org/public/rest/data/OECD.SDD.STES,DSD_STES@DF_CLI,4.1/ITA.M.CCICP...AA.IX..H?startPeriod='+startDate_ALL+'&dimensionAtObservation=AllDimensions', options);
-seriesDate = datetime(append(string(cell2mat({dataTemp.structure.dimensions.observation(10).values.id}')),'-01'));
-seriesTable = array2table(cell2mat(struct2cell(dataTemp.dataSets.observations)')');
-seriesTable = timetable(seriesDate,seriesTable{:,1});
+ITNOWDataProgress("ITCCI", "OECD or FRED mirror", 21);
+[seriesDate, seriesValues] = ITNOWFetchOECDConfidence("CCICP", startDate_ALL, options);
+seriesTable = timetable(seriesDate,seriesValues);
 dataTable = synchronize(dataTable,seriesTable);
 colNames = [colNames,"ITCCI"];
 
 % --- 4.18. Business Confidence Indicator (ITCBC) ---
-ITNOWDataProgress("ITCBC", "OECD", 21);
-dataTemp = webread('https://sdmx.oecd.org/public/rest/data/OECD.SDD.STES,DSD_STES@DF_CLI,4.1/ITA.M.BCICP...AA.IX..H?startPeriod='+startDate_ALL+'&dimensionAtObservation=AllDimensions', options);
-seriesDate = datetime(append(string(cell2mat({dataTemp.structure.dimensions.observation(10).values.id}')),'-01'));
-seriesTable = array2table(cell2mat(struct2cell(dataTemp.dataSets.observations)')');
-seriesTable = timetable(seriesDate,seriesTable{:,1});
+ITNOWDataProgress("ITCBC", "OECD or FRED mirror", 21);
+[seriesDate, seriesValues] = ITNOWFetchOECDConfidence("BCICP", startDate_ALL, options);
+seriesTable = timetable(seriesDate,seriesValues);
 dataTable = synchronize(dataTable,seriesTable);
 colNames = [colNames,"ITCBC"];
 
@@ -411,7 +413,6 @@ writetimetable(GDPSeries,append("GDP_History/GDP",strrep(endDate,"-",""),".csv")
 writetimetable(dataTable,append("data",strrep(endDate,"-",""),".csv"))
 
 metadataDir = fullfile(base_path, "DATA", "VINTAGE_METADATA");
-mkdir(metadataDir)
 metadata = struct();
 metadata.vintage = strrep(endDate, "-", "");
 metadata.run_date = endDate;
