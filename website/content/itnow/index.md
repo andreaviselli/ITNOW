@@ -9,8 +9,6 @@ draft: false
 We provide monthly nowcasts of Italian quarterly real Gross Domestic Product in **2020 chain-linked terms**.
 The nowcasting model is based on the industrial production index, the EUROCOIN indicator, and two static principal-component factors from a small panel of economic time series, in a linear bridge equation.
 
-> 🧑‍💻 Source code is available on [**GitHub**](https://github.com/andreaviselli/ITNOW).
-
 {{< itnow_summary >}}
 
 Live releases begin in **November 2026**, starting with the nowcast for **October 2026**.
@@ -55,7 +53,9 @@ Our nowcasting model is a quarterly bridge equation using industrial-production 
 
 &nbsp;
 
-## Data, downloads, and links
+## Code, downloads, and links
+
+> 🧑‍💻 Source code is available on [**GitHub**](https://github.com/andreaviselli/ITNOW).
 
 {{< itnow_source >}}
 
