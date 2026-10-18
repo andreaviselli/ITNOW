@@ -53,9 +53,9 @@ Our nowcasting model is a quarterly bridge equation using industrial-production 
 
 &nbsp;
 
-## Code, downloads, and links
+## Code and downloads
 
-> 🧑‍💻 Source code is available on [**GitHub**](https://github.com/andreaviselli/ITNOW).
+> 🧑‍💻 Open-source repository available on [**Github**](https://github.com/andreaviselli/ITNOW).
 
 {{< itnow_source >}}
 
