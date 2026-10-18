@@ -4,7 +4,9 @@
 from __future__ import annotations
 
 import argparse
+from copy import copy
 import hashlib
+from io import BytesIO
 import json
 import shutil
 from pathlib import Path
@@ -204,7 +206,87 @@ def performance_pdf(scores: pd.DataFrame, history: pd.DataFrame, reference: pd.T
                       topMargin=35, bottomMargin=35).build(story)
 
 
-def stage_website(root: Path, assets: Path, project: Path) -> None:
+def live_history(base: Path, website: Path, latest: dict,
+                 release_date: pd.Timestamp) -> tuple[Path, bytes] | None:
+    """Prepare one current monthly release without changing earlier records."""
+    released = pd.Timestamp(release_date)
+    if released.tzinfo is not None:
+        released = released.tz_convert("Europe/Rome").tz_localize(None)
+    released = released.normalize()
+    reference = pd.Timestamp(latest["reference_date"])
+    produced = pd.Timestamp(latest["produced_at"]).tz_convert("Europe/Rome").tz_localize(None)
+    vintage = pd.Timestamp(latest["data_vintage"])
+    month = released.to_period("M")
+    if (released < FIRST_LIVE_RELEASE or reference != (month-1).to_timestamp()
+            or produced.to_period("M") != month
+            or produced.normalize() > released or vintage > produced.normalize()):
+        return None
+
+    from openpyxl import load_workbook
+
+    local = base/"HISTORY/RELEASES/ITNOW_History.xlsx"
+    public = website/"static/ITNOW/ITNOW_History.xlsx"
+    template = local if local.is_file() else public
+    if not template.is_file():
+        raise FileNotFoundError(f"Supply the release workbook at {local} or {public}.")
+    original = template.read_bytes()
+    workbook = load_workbook(BytesIO(original))
+    headers = ["Release date", "Reference month", "Target quarter", "QoQ", "Lower 5%",
+               "Upper 95%", "YoY", "Carry-over", "GDP level (EUR bn)", "Data vintage",
+               "Produced at", "Code version"]
+
+    def records(book):
+        if not {"INFO", "DATA", "NOWCAST"}.issubset(book.sheetnames):
+            raise ValueError("The release workbook needs INFO, DATA and NOWCAST sheets.")
+        sheet = book["NOWCAST"]
+        if [cell.value for cell in sheet[1]] != headers:
+            raise ValueError("Unexpected NOWCAST columns in the release workbook.")
+        return [row for row in sheet.iter_rows(min_row=2, values_only=True)
+                if any(value is not None for value in row)]
+
+    existing = records(workbook)
+    if public.is_file():
+        published = records(load_workbook(BytesIO(public.read_bytes())))
+        if any(row not in existing for row in published):
+            raise ValueError("Local and website release histories differ; synchronize them before adding a release.")
+    current = latest["current"]
+    rate_keys = ["qoq_percent", "lower_percent", "upper_percent", "yoy_percent", "carry_over_percent"]
+    rates = [float(current[key])/100 if current[key] is not None and np.isfinite(current[key])
+             else None for key in rate_keys]
+    level = current["level_billions"]
+    if level is not None and not np.isfinite(level):
+        level = None
+    values = [released.to_pydatetime(), reference.to_pydatetime(), latest["quarter"], *rates,
+              level, vintage.to_pydatetime(), latest["produced_at"],
+              latest.get("code_version")]
+    matches = [row for row in existing if pd.Timestamp(row[1]) == reference
+               and pd.Timestamp(row[9]) == vintage
+               and row[10] == latest["produced_at"] and row[11] == latest.get("code_version")]
+    if matches:
+        same = len(matches) == 1
+        for before, after in zip(matches[0][1:], values[1:]):
+            if isinstance(before, (int, float)) and isinstance(after, (int, float)):
+                same &= bool(np.isclose(before, after, rtol=1e-12, atol=1e-14))
+            else:
+                same &= before == after
+        if not same:
+            raise ValueError(f"A different release for {reference:%B %Y} is already recorded; it will not be overwritten.")
+        return local, original
+
+    sheet = workbook["NOWCAST"]
+    target = max((row[0].row for row in sheet.iter_rows(min_row=2)
+                  if any(cell.value is not None for cell in row)), default=1)+1
+    for column, value in enumerate(values, 1):
+        cell = sheet.cell(target, column)
+        cell._style = copy(sheet.cell(max(2, target-1), column)._style)
+        cell.value = value
+    buffer = BytesIO()
+    workbook.save(buffer)
+    return local, buffer.getvalue()
+
+
+def stage_website(root: Path, assets: Path, project: Path,
+                  release: tuple[Path, bytes] | None = None) -> None:
     """Copy only ITNOW sources and assets; keep other website work untouched."""
     if not (root/"content").is_dir() or not (root/"static").is_dir():
         raise ValueError("website-root must be the existing local website checkout.")
@@ -235,6 +317,21 @@ def stage_website(root: Path, assets: Path, project: Path) -> None:
                 saved.parent.mkdir(parents=True, exist_ok=True)
                 shutil.copy2(target, saved)
             shutil.copy2(source, target)
+    if release is not None:
+        local, content = release
+        targets = [local, destination/"ITNOW_History.xlsx"]
+        previous = {path: path.read_bytes() if path.is_file() else None for path in targets}
+        try:
+            for path in targets:
+                path.parent.mkdir(parents=True, exist_ok=True)
+                path.write_bytes(content)
+        except Exception:
+            for path, old in previous.items():
+                if old is None:
+                    path.unlink(missing_ok=True)
+                else:
+                    path.write_bytes(old)
+            raise
 
 
 def build_report(base: Path, vintage: str, website: Path | None = None) -> Path:
@@ -311,7 +408,8 @@ def build_report(base: Path, vintage: str, website: Path | None = None) -> Path:
         if pdf.is_file():
             shutil.copy2(pdf, assets/pdf.name)
     if website:
-        stage_website(website, assets, project)
+        release = live_history(base, website, latest, pd.Timestamp.now(tz="Europe/Rome"))
+        stage_website(website, assets, project, release)
     print(f"Report: {assets}\n{latest['quarter']}: {stats['qoq_percent']:.3f}% QoQ; reference {latest['reference_month']}.")
     return assets
 
