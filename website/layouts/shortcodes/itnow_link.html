@@ -1,0 +1,7 @@
+{{- $url := printf "ITNOW/%s" (.Get "file") | relURL -}}
+{{- if or (eq (.Get "file") "ITNOW_History.xlsx") (eq (.Get "file") "ITNOW_Performance.pdf") -}}
+{{- $version := readFile (printf "static/ITNOW/%s" (.Get "file")) | md5 -}}
+{{- printf "%s?v=%s" $url $version -}}
+{{- else -}}
+{{- $url -}}
+{{- end -}}

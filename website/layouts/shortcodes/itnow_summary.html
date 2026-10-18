@@ -1,0 +1,19 @@
+{{- $latest := readFile "static/ITNOW/latest_itnow.json" | transform.Unmarshal -}}
+<div class="itnow-summary" aria-label="Latest Italian GDP nowcast">
+  <div class="itnow-summary-intro">
+    <span class="itnow-summary-label">Latest model calculation</span>
+    <strong>{{ $latest.quarter }} GDP growth</strong>
+    <span>Reference: {{ $latest.reference_month }}</span>
+  </div>
+  <div class="itnow-summary-value">
+    <strong>{{ printf "%.2f" $latest.current.qoq_percent }}%</strong>
+    <span>Quarter-on-quarter percentage change</span>
+  </div>
+  <div class="itnow-summary-range">
+    {{ if and (ne $latest.current.lower_percent nil) (ne $latest.current.upper_percent nil) }}
+    <strong>{{ printf "%.2f" $latest.current.lower_percent }}% to {{ printf "%.2f" $latest.current.upper_percent }}%</strong>
+    {{ else }}<strong>Not yet available</strong>{{ end }}
+    <span>90% empirical prediction interval</span>
+  </div>
+</div>
+<p class="itnow-update"><small>Data: {{ $latest.data_date }}. Calculated: {{ $latest.production_date }}.</small></p>

@@ -1,0 +1,11 @@
+{{- $latest := readFile "static/ITNOW/latest_itnow.json" | transform.Unmarshal -}}
+{{- $keys := slice "previous_qoq_percent" "qoq_percent" "lower_percent" "upper_percent" -}}
+{{- $labels := slice "Previous-quarter GDP (%)" "QoQ nowcast (%)" "5% bound (%)" "95% bound (%)" -}}
+{{- if eq (.Get "kind") "measures" -}}
+  {{- $keys = slice "qoq_percent" "yoy_percent" "carry_over_percent" "level_billions" -}}
+  {{- $labels = slice "QoQ change (%)" "YoY change (%)" "Carry-over (%)" "Level (billion €)" -}}
+{{- end -}}
+<table>
+  <thead><tr>{{ range $labels }}<th>{{ . }}</th>{{ end }}</tr></thead>
+  <tbody><tr>{{ range $keys }}{{ $value := index $latest.current . }}<td>{{ if ne $value nil }}{{ printf "%.2f" $value }}{{ else }}n.a.{{ end }}</td>{{ end }}</tr></tbody>
+</table>

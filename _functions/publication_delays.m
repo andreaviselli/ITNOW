@@ -1,0 +1,16 @@
+function delays = publication_delays(names)
+%publication_delays Fixed pseudo-real-time lags in calendar months.
+
+expected = ["INDPROD", "CONSTRPROD", "INDTURN", "INDPRODPRC", ...
+    "INDIMPPRC", "CONSTRCOST", "HICPALL", "EER41EUR", "FTSEMIB", ...
+    "TOURNIGHT", "NEWPCAREG", "UNEMPLNUM", "TRADEBAL", ...
+    "RETLTRADE", "ITESI", "ITCCI", "ITCBC", "ITACOIN", "EUROCOIN", "GDP"];
+fixed = [2, 2, 1, 1, 2, 1, 1, 0, 0, 2, 1, 1, 2, ...
+    1, 0, 0, 0, 0, 0, 1];
+[found, order] = ismember(string(names), expected);
+if ~all(found) || numel(names) ~= numel(expected) || numel(unique(order)) ~= numel(expected)
+    error("publication_delays:UnexpectedColumns", ...
+        "The source panel must contain the expected 20 distinct indicators.");
+end
+delays = fixed(order);
+end

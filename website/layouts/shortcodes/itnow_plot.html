@@ -1,0 +1,22 @@
+{{- $file := .Get "file" -}}
+{{- $url := printf "ITNOW/%s" $file | relURL -}}
+{{- $id := printf "itnow-plot-%s" (md5 $file) -}}
+{{- if not (.Page.Scratch.Get "itnow_plotly_loaded") -}}
+<script src="{{ "ITNOW/plotly.min.js" | relURL }}"></script>
+{{- .Page.Scratch.Set "itnow_plotly_loaded" true -}}
+{{- end -}}
+<div id="{{ $id }}" class="plotly" style="height:510px"></div>
+<script>
+fetch({{ $url }}, {cache: "no-cache"})
+  .then(function(response) {
+    if (!response.ok) throw new Error("Figure unavailable: " + response.status);
+    return response.json();
+  })
+  .then(function(figure) {
+    return Plotly.newPlot({{ $id }}, figure.data, figure.layout, {responsive: true, displaylogo: false});
+  })
+  .catch(function(error) {
+    document.getElementById({{ $id }}).textContent = "Unable to load the figure.";
+    console.error(error);
+  });
+</script>

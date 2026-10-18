@@ -1,0 +1,3 @@
+{{- $latest := readFile "static/ITNOW/latest_itnow.json" | transform.Unmarshal -}}
+<p>The latest observed GDP quarter is {{ $latest.last_actual_quarter }}.
+<a href="{{ $latest.gdp_source.url }}">ISTAT source data</a>.</p>

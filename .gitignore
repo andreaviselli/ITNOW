@@ -1,43 +1,40 @@
-# macOS
-
+# Local data, forecasts, reports and environments
+/DATA/
+/HISTORY/
+/output/
+/outputs/
+/results/
+/figures/
+/tables/
+/__DEPRECATED/
+.venv/
+.env
+*.env
 .DS_Store
 
-# Project data and generated material
+# Local notes, agent guidance and source snapshots
+/archive/
+/docs/
+/AGENTS.md
 
-DATA/
-HISTORY/
-__DEPRECATED/
-scripts/local_check_current_nowcast.ipynb
-
-# MATLAB temporary/autosave files
-
+# MATLAB and Python generated files
 *.asv
 *.m~
 *.mlx~
 *.slxc
 *.mex*
-*.log
-
-# MATLAB generated folders
-
 slprj/
 codegen/
-
-# Python/Jupyter cache files
-
-**pycache**/
+__pycache__/
 *.pyc
+.pytest_cache/
 .ipynb_checkpoints/
 
-# Environment/secrets
-
-.env
-*.env
-
-# Large or generated outputs
-
-outputs/
-output/
-results/
-figures/
-tables/
+# Generated TeX material
+*.log
+*.aux
+*.out
+*.fls
+*.fdb_latexmk
+*.synctex.gz
+/docs/*.pdf
